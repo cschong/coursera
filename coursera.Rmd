@@ -1,0 +1,146 @@
+---
+title: "coursera"
+output: "html_document"
+date: "2024-08-19"
+---
+
+## Loading libraries
+
+To start the script, we first load the necessary libraries. 
+Since this is a machine learning project, we’ll load two of the most commonly used libraries: caret and randomForest. 
+The script is shown below.
+
+```{r}
+library(caret)
+library(randomForest)
+library(ggplot2)
+```
+
+## Loading data
+
+The training data for this project are available here: <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv> The test data are available here: <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>.  Both files were downloaded to the local machine for easier access.
+
+```{r}
+train_csv <- "C:/Temp/pml-training.csv"
+test_csv <- "C:/Temp/pml-testing.csv"
+
+training <- read.csv(train_csv)
+testing <- read.csv(test_csv)
+```
+
+## Exploratory Data Analysis
+
+```{r}
+str(training)
+```
+
+There are a total of 160 columns in the dataset, but not all of them are related to the output variable "classe." Having too many predictors can reduce the accuracy of the machine learning model. Additionally, since I'm running this on a laptop with limited resources, it's important to optimize the data. Therefore, we'll start by removing columns that have no relationship with the output, such as timestamp, sequence ID, and character columns.
+
+```{r}
+training2 <- training[, !names(training) %in% c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")]
+testing2 <- testing[, !names(testing) %in% c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")]
+```
+
+I observed that many columns contain a significant number of NA values. Next, we'll remove columns where more than 80% of the records are NA.
+
+```{r}
+na_count <-sapply(training, function(y) sum(length(which(is.na(y)))))
+na_count2 <- data.frame(na_count)
+na_count3 <- data.frame(var=rownames(na_count2), total=na_count2$na_count)
+na_count4 <- na_count3[na_count3$total > 0,]
+
+training3 <- training2[, !names(training2) %in% c(na_count4$var)]
+testing3 <- testing2[, !names(testing2) %in% c(na_count4$var)]
+
+```
+
+I observed that many columns contain NA values. Next, we’ll remove columns where more than 80% of the records are NA.
+
+```{r}
+empty_count <-sapply(training, function(y) sum(length(which(y==""))))
+empty_count2 <- data.frame(empty_count)
+empty_count3 <- data.frame(var=rownames(empty_count2), total=empty_count2$empty_count)
+empty_count4 <- empty_count3[empty_count3$total > 0,]
+
+training4 <- training3[, !names(training3) %in% c(empty_count4$var)]
+testing4 <- testing3[, !names(training3) %in% c(empty_count4$var)]
+
+
+```
+
+Let’s examine the dimensions of the data frame at each step of column reduction. We’ve successfully reduced the number of columns to 53, but this is still quite high.
+
+```{r}
+dim(training)
+dim(training2)
+dim(training3)
+dim(training4)
+```
+
+## Principle Component Analysis
+
+The next step in reducing the number of columns is to apply Principal Component Analysis (PCA), as we learned in Module 2. We will retain only the principal components that account for 80% of the variance.
+
+```{r}
+pca_training <- prcomp(training4[, !names(training4) %in% c("classe")],center = TRUE, scale. = TRUE)
+pca_testing <- prcomp(testing4[, !names(testing4) %in% c("classe")],center = TRUE, scale. = TRUE)
+
+cumulative_variance <- cumsum(pca_training$sdev^2 / sum(pca_training$sdev^2))
+num_components <- which(cumulative_variance >= 0.80)[1]
+num_components
+
+training5 <- cbind(data.frame(classe=training4$classe), data.frame(pca_training$x[,c(1:num_components)]))
+testing5 <- data.frame(pca_testing$x[,c(1:num_components)])
+
+```
+
+The next step is to split the training dataset into a training set and a validation set with a 70% to 30% ratio.
+
+```{r}
+inTrain <- createDataPartition(y=training5$classe,p=0.7, list=FALSE)
+training6<- training5[inTrain,]
+validation6<- training5[-inTrain,]
+```
+
+## Model Training and Validating
+```{r}
+
+PC1 <- data.frame(PC="PC1", value=training6$PC1)
+PC2 <- data.frame(PC="PC2", value=training6$PC2)
+PC3 <- data.frame(PC="PC3", value=training6$PC3)
+PC4 <- data.frame(PC="PC4", value=training6$PC4)
+PC5 <- data.frame(PC="PC5", value=training6$PC5)
+PC6 <- data.frame(PC="PC6", value=training6$PC6)
+PC7 <- data.frame(PC="PC7", value=training6$PC7)
+PC8 <- data.frame(PC="PC8", value=training6$PC8)
+PC9 <- data.frame(PC="PC9", value=training6$PC9)
+PC10 <- data.frame(PC="PC10", value=training6$PC10)
+PC11 <- data.frame(PC="PC11", value=training6$PC11)
+PC12 <- data.frame(PC="PC12", value=training6$PC12)
+PC_data <- rbind(PC1, PC2, PC3, PC4, PC5, PC6, PC7, PC8, PC9, PC10,PC11,PC12)
+
+qplot(PC, value, data=PC_data, fill=PC, geom=c("boxplot")) + ylim(c(-10,10))
+
+```
+
+## Model Training and Validating
+
+For this homework, the random forest model was chosen. Cross-validation was incorporated into the model training, with the minimum number of folds selected due to the laptop's resource limitations. The model was then validated using the validation dataset, achieving an accuracy greater than 0.95, which is excellent.
+
+```{r}
+set.seed(123)
+rf_model <- train(classe ~ ., data = training6, method = "rf", trControl = trainControl(method = "cv", number = 2))
+
+rf_pred <- predict(rf_model, validation6)
+confusionMatrix(rf_pred, factor(validation6$classe))
+```
+
+## Predicting Testing Dataset
+
+The importance of the variables was examined. The trained model was then used to make predictions on the testing dataset.
+
+```{r}
+varImp(rf_model)
+rf_pred2 <- predict(rf_model, testing5)
+```
+
